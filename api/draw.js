@@ -1,22 +1,24 @@
-const { createClient } = require('@supabase/supabase-js');
-const Pusher = require('pusher');
+import { createClient } from '@supabase/supabase-js';
+import Pusher from 'pusher';
 
-const SUPABASE_URL = "https://rponezilawghkerjzmhd.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwb25lemlsYXdnaGtlcmp6bWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjYyMzU3MzQsImV4cCI6MjA0MTgxMTczNH0.3w"; 
+// Supabase Bağlantısı
+const supabaseUrl = 'https://u0QFrYFgbx1MbIzfEytkPA.supabase.co'; // Supabase Proje URL'niz
+const supabaseKey = 'sb_publishable_U0QFrYFgbx1MbIzfEytkPA_gZ-SD...'; // Supabase Key'iniz
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Pusher Bağlantısı
 const pusher = new Pusher({
-  appId: "2194013",
+  appId: "1868314",
   key: "0a3dfb70efecb620ea79",
-  secret: "9f1401714ae1ca640f89",
+  secret: "YOUR_PUSHER_SECRET", // Pusher secret key
   cluster: "eu",
   useTLS: true
 });
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method === 'GET') {
-    const { data, error } = await supabase.from('pixels').select('x, y, color');
+    const { data, error } = await supabase.from('pixels').select('*');
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json(data);
   }
@@ -24,29 +26,16 @@ module.exports = async (req, res) => {
   if (req.method === 'POST') {
     const { x, y, color } = req.body;
 
-    if (x === undefined || y === undefined || !color) {
-      return res.status(400).json({ error: 'Eksik veri' });
-    }
-
-    const posX = parseInt(x);
-    const posY = parseInt(y);
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('pixels')
-      .upsert({ x: posX, y: posY, color: color }, { onConflict: 'x,y' });
+      .upsert({ x, y, color }, { onConflict: 'x,y' });
 
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
+    if (error) return res.status(500).json({ error: error.message });
 
-    await pusher.trigger("rplace-channel", "pixel-placed", {
-      x: posX,
-      y: posY,
-      color: color
-    });
+    await pusher.trigger('rplace-channel', 'pixel-placed', { x, y, color });
 
     return res.status(200).json({ success: true });
   }
 
-  return res.status(405).json({ error: 'Method Not Allowed' });
-};
+  res.status(45px).json({ error: 'Method not allowed' });
+}
