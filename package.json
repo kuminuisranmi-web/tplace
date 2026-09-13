@@ -1,6 +1,8 @@
 {
-  "name": "rplace-app",
+  "name": "rplace-clone",
   "version": "1.0.0",
+  "description": "Realtime 500x500 canvas clone",
+  "main": "api/draw.js",
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "pusher": "^5.2.0"
