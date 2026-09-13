@@ -22,9 +22,7 @@
       position: relative;
       cursor: grab;
     }
-    #viewport:active {
-      cursor: grabbing;
-    }
+    #viewport:active { cursor: grabbing; }
     canvas {
       background-color: #ffffff;
       image-rendering: pixelated;
@@ -74,7 +72,6 @@
     const viewport = document.getElementById('viewport');
     const palette = document.getElementById('palette');
 
-    // Renk Paleti
     const colors = [
       '#6D001A', '#BE0039', '#FF4500', '#FFA800', '#FFD635',
       '#00A368', '#00CC78', '#7EED56', '#00756F', '#009EAA',
@@ -97,7 +94,7 @@
       palette.appendChild(btn);
     });
 
-    // Zoom & Kaydırma Mantığı
+    // Zoom & Kaydırma
     let scale = 1.5;
     let panX = (window.innerWidth - 500 * scale) / 2;
     let panY = (window.innerHeight - 500 * scale) / 2;
@@ -110,30 +107,20 @@
     }
     updateTransform();
 
-    // Zoom (Mouse Wheel)
     viewport.addEventListener('wheel', (e) => {
       e.preventDefault();
       const zoomFactor = 1.1;
       const mouseX = e.clientX;
       const mouseY = e.clientY;
-
-      let newScale;
-      if (e.deltaY < 0) {
-        newScale = Math.min(scale * zoomFactor, 20); // Max Zoom 20x
-      } else {
-        newScale = Math.max(scale / zoomFactor, 0.5); // Min Zoom 0.5x
-      }
-
+      let newScale = e.deltaY < 0 ? Math.min(scale * zoomFactor, 20) : Math.max(scale / zoomFactor, 0.5);
       panX = mouseX - (mouseX - panX) * (newScale / scale);
       panY = mouseY - (mouseY - panY) * (newScale / scale);
       scale = newScale;
-
       updateTransform();
     }, { passive: false });
 
-    // Sürükleme (Pan) Baş başlangıcı
     viewport.addEventListener('mousedown', (e) => {
-      if (e.button === 0) { // Sol tık
+      if (e.button === 0) {
         isDragging = true;
         startX = e.clientX - panX;
         startY = e.clientY - panY;
@@ -145,28 +132,23 @@
       if (isDragging) {
         const dx = e.clientX - startX - panX;
         const dy = e.clientY - startY - panY;
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-          hasMoved = true;
-        }
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
         panX = e.clientX - startX;
         panY = e.clientY - startY;
         updateTransform();
       }
     });
 
-    window.addEventListener('mouseup', () => {
-      isDragging = false;
-    });
+    window.addEventListener('mouseup', () => { isDragging = false; });
 
-    // Piksel Çizimi
     function drawPixel(x, y, color) {
       ctx.fillStyle = color;
       ctx.fillRect(x, y, 1, 1);
     }
 
-    // Tıklama ile Piksel Koyma (Sürüklerken Çizmesin)
+    // Beklemeden Tıklayınca Anında Çiz
     viewport.addEventListener('click', async (e) => {
-      if (hasMoved) return; // Eğer tuval sürüklendiyse çizim yapma
+      if (hasMoved) return;
 
       const rect = canvas.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
@@ -190,7 +172,7 @@
       }
     });
 
-    // Supabase'den ilk yükleme
+    // Supabase Verilerini Yükle
     async function loadPixels() {
       try {
         const res = await fetch('/api/draw');
@@ -203,7 +185,7 @@
       }
     }
 
-    // Pusher ile Canlı Senkronizasyon
+    // Pusher Canlı Yayın
     const pusher = new Pusher('0a3dfb70efecb620ea79', { cluster: 'eu' });
     const channel = pusher.subscribe('rplace-channel');
     channel.bind('pixel-placed', function(data) {
