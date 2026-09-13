@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // CORS izinleri
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -12,7 +11,6 @@ export default async function handler(req, res) {
   const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwb25lemlsYXdnaGtlcmp6bWhkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTI5NDMzNCwiZXhwIjoyMTA0ODcwMzM0fQ.fU53-D6lOHf7MqNf6oh7Da_eyNMzcsR343h9tULShi8';
 
   try {
-    // 1. Pikselleri Listele (GET)
     if (req.method === 'GET') {
       const response = await fetch(`${supabaseUrl}/rest/v1/pixels?select=*`, {
         headers: {
@@ -21,19 +19,19 @@ export default async function handler(req, res) {
         }
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(JSON.stringify(data));
+      if (!response.ok) {
+        return res.status(500).json({ error: "Supabase GET Hatası", details: data });
+      }
       return res.status(200).json(data || []);
     }
 
-    // 2. Piksel Kaydet / Güncelle (POST)
     if (req.method === 'POST') {
       const { x, y, color } = req.body || {};
 
       if (x === undefined || y === undefined || !color) {
-        return res.status(400).json({ error: 'Eksik veri.' });
+        return res.status(400).json({ error: 'Eksik veri gönderildi.' });
       }
 
-      // Supabase Rest API Upsert (Çakışmada güncelle)
       const response = await fetch(`${supabaseUrl}/rest/v1/pixels`, {
         method: 'POST',
         headers: {
@@ -47,7 +45,7 @@ export default async function handler(req, res) {
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(errText);
+        return res.status(500).json({ error: "Supabase POST Hatası", details: errText });
       }
 
       return res.status(200).json({ success: true });
@@ -55,7 +53,6 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
-    console.error("API Hatası:", err);
-    return res.status(500).json({ error: err.message || 'Sunucu hatası' });
+    return res.status(500).json({ error: "Kritik Sunucu Hatası", details: err.message });
   }
 }
