@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>r/place - Live Canvas</title>
+  <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+  <style>
+    * { box-sizing: border-box; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background-color: #050505; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; }
+    
+    #viewport { 
+      width: 100vw; 
+      height: 100vh; 
+      cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path d="M9 0h2v9h9v2h-9v9H9v-9H0V9h9V0z" fill="%23000000"/><path d="M10 1h0.5v8.5H19v0.5h-8.5V19H10v-8.5H1.5V10H10V1z" fill="%23ffffff"/></svg>') 10 10, crosshair; 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      background-color: #050505; 
+      background-image: radial-gradient(#1c1c1e 1px, transparent 1px); 
+      background-size: 24px 24px; 
+    }
+
+    #canvas-wrapper { 
+      position: absolute; 
+      transform-origin: 0 0; 
+      box-shadow: 0 0 80px rgba(0,0,0,1); 
+      background-color: #ffffff; 
+      border: 1px solid #1a1a1a;
+    }
+    
+    canvas { 
+      image-rendering: optimizeSpeed;             
+      image-rendering: -moz-crisp-edges;          
+      image-rendering: -webkit-optimize-contrast; 
+      image-rendering: -o-crisp-edges;            
+      image-rendering: pixelated;                 
+      -ms-interpolation-mode: nearest-neighbor;   
+      display: block; 
+    }
+
+    .ui-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(18, 18, 20, 0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 10px 16px; border-radius: 40px; box-shadow: 0 12px 36px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.12); display: flex; align-items: center; gap: 10px; z-index: 1000; }
+    .palette { display: flex; gap: 6px; align-items: center; max-width: 80vw; overflow-x: auto; padding: 4px 2px; }
+    .palette::-webkit-scrollbar { display: none; }
+    .color-box { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; flex-shrink: 0; transition: transform 0.1s ease; }
+    .color-box:hover { transform: scale(1.2); }
+    .color-box.selected { border-color: #ffffff; transform: scale(1.25); box-shadow: 0 0 10px rgba(255, 255, 255, 0.6); }
+    
+    .status-badge { background: #1a1a1e; color: #888; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 13px; font-family: monospace; border: 1px solid rgba(255,255,255,0.08); }
+    .status-badge.cooldown { color: #ff4500; border-color: rgba(255,69,0,0.3); }
+
+    .coords { position: fixed; top: 16px; left: 16px; background: rgba(18, 18, 20, 0.85); backdrop-filter: blur(8px); color: #d7dede; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 700; font-family: monospace; border: 1px solid rgba(255,255,255,0.08); z-index: 1000; pointer-events: none; }
+    
+    .zoom-controls { position: fixed; right: 20px; bottom: 25px; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
+    .zoom-btn { width: 40px; height: 40px; background: rgba(18, 18, 20, 0.9); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 50%; font-size: 20px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body>
+
+  <div class="coords" id="coords">X: 0, Y: 0 | Zoom: 1.5x</div>
+
+  <div id="viewport">
+    <div id="canvas-wrapper">
+      <canvas id="placeCanvas" width="500" height="500"></canvas>
+    </div>
+  </div>
+
+  <div class="ui-bar">
+    <div class="palette" id="palette"></div>
+    <div class="status-badge" id="statusBadge">YÜKLENİYOR...</div>
+  </div>
+
+  <div class="zoom-controls">
+    <button class="zoom-btn" id="zoomIn">+</button>
+    <button class="zoom-btn" id="zoomOut">-</button>
+  </div>
+
+  <script>
+    const PUSHER_KEY = '0a3dfb70efecb620ea79';
+    const PUSHER_CLUSTER = 'eu';
+    const MAP_SIZE = 500;
+    const COOLDOWN_TIME = 30;
+
+    const canvas = document.getElementById('placeCanvas');
+    const ctx = canvas.getContext('2d');
+    const wrapper = document.getElementById('canvas-wrapper');
+    const viewport = document.getElementById('viewport');
+    const coordsDiv = document.getElementById('coords');
+    const paletteContainer = document.getElementById('palette');
+    const statusBadge = document.getElementById('statusBadge');
+
+    const colors = [
+      '#6D001A', '#BE0039', '#FF4500', '#FFA800', '#FFD635', '#FFF8B8',
+      '#00A368', '#00CC78', '#7EED56', '#00756F', '#009EAA', '#00CCC0',
+      '#2450A4', '#3690EA', '#51E9F4', '#493AC1', '#6A5CFF', '#94B3FF',
+      '#811E9F', '#B44AC0', '#E4ABFF', '#DE107F', '#FF99AA', '#FFD4E5',
+      '#6D482F', '#9C6926', '#FFB470', '#000000', '#515252', '#898D90',
+      '#D4D7D9', '#FFFFFF'
+    ];
+    let selectedColor = colors[2];
+    let cooldownRemaining = 0;
+
+    let scale = 1.5;
+    let panX = (window.innerWidth - (MAP_SIZE * scale)) / 2;
+    let panY = (window.innerHeight - (MAP_SIZE * scale)) / 2;
+    let isDragging = false;
+    let hasDragged = false;
+    let startX = 0, startY = 0;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+    colors.forEach((color) => {
+      const box = document.createElement('div');
+      box.className = `color-box ${color === selectedColor ? 'selected' : ''}`;
+      box.style.backgroundColor = color;
+      box.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.color-box').forEach(b => b.classList.remove('selected'));
+        box.classList.add('selected');
+        selectedColor = color;
+      });
+      paletteContainer.appendChild(box);
+    });
+
+    function updateTransform() {
+      wrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+      coordsDiv.innerText = `X: ${Math.round(-panX / scale)}, Y: ${Math.round(-panY / scale)} | Zoom: ${scale.toFixed(1)}x`;
+    }
+    updateTransform();
+
+    async function loadExistingPixels() {
+      try {
+        const res = await fetch('/api/draw');
+        const pixels = await res.json();
+        if (Array.isArray(pixels)) {
+          pixels.forEach(p => drawPixel(p.x, p.y, p.color));
+        }
+      } catch (err) {
+        console.error("Pikseller yüklenemedi:", err);
+      } finally {
+        statusBadge.innerText = 'HAZIR';
+      }
+    }
+    loadExistingPixels();
+
+    const handleStart = (clientX, clientY) => {
+      isDragging = true;
+      hasDragged = false;
+      startX = clientX - panX;
+      startY = clientY - panY;
+    };
+
+    const handleMove = (clientX, clientY) => {
+      if (!isDragging) return;
+      const dx = clientX - (startX + panX);
+      const dy = clientY - (startY + panY);
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        hasDragged = true;
+      }
+      panX = clientX - startX;
+      panY = clientY - startY;
+      updateTransform();
+    };
+
+    const handleEnd = (clientX, clientY) => {
+      if (isDragging && !hasDragged) {
+        placePixelAt(clientX, clientY);
+      }
+      isDragging = false;
+    };
+
+    viewport.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.ui-bar') || e.target.closest('.zoom-controls')) return;
+      handleStart(e.clientX, e.clientY);
+    });
+    window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+    window.addEventListener('mouseup', (e) => handleEnd(e.clientX, e.clientY));
+
+    viewport.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.ui-bar') || e.target.closest('.zoom-controls')) return;
+      if (e.touches.length === 1) {
+        handleStart(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) {
+        handleMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', (e) => {
+      if (e.changedTouches.length > 0) {
+        handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      }
+    });
+
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = 1.2;
+      let newScale = e.deltaY < 0 ? scale * zoomFactor : scale / zoomFactor;
+      newScale = Math.min(Math.max(0.5, newScale), 60);
+
+      panX = e.clientX - (e.clientX - panX) * (newScale / scale);
+      panY = e.clientY - (e.clientY - panY) * (newScale / scale);
+      scale = newScale;
+      updateTransform();
+    }, { passive: false });
+
+    document.getElementById('zoomIn').onclick = () => { scale = Math.min(scale * 1.5, 60); updateTransform(); };
+    document.getElementById('zoomOut').onclick = () => { scale = Math.max(scale / 1.5, 0.5); updateTransform(); };
+
+    async function placePixelAt(clientX, clientY) {
+      if (cooldownRemaining > 0) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((clientX - rect.left) / scale);
+      const y = Math.floor((clientY - rect.top) / scale);
+
+      if (x >= 0 && x < MAP_SIZE && y >= 0 && y < MAP_SIZE) {
+        drawPixel(x, y, selectedColor);
+        startCooldown();
+
+        try {
+          await fetch('/api/draw', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ x, y, color: selectedColor })
+          });
+        } catch (err) {
+          console.error('Piksel gönderilemedi:', err);
+        }
+      }
+    }
+
+    function startCooldown() {
+      cooldownRemaining = COOLDOWN_TIME;
+      statusBadge.classList.add('cooldown');
+
+      const timer = setInterval(() => {
+        cooldownRemaining--;
+        statusBadge.innerText = `${cooldownRemaining}S`;
+
+        if (cooldownRemaining <= 0) {
+          clearInterval(timer);
+          statusBadge.classList.remove('cooldown');
+          statusBadge.innerText = 'HAZIR';
+        }
+      }, 1000);
+    }
+
+    function drawPixel(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    const pusher = new Pusher(PUSHER_KEY, { cluster: PUSHER_CLUSTER });
+    const channel = pusher.subscribe('rplace-channel');
+
+    channel.bind('pixel-placed', (data) => {
+      drawPixel(data.x, data.y, data.color);
+    });
+  </script>
+</body>
+</html>
