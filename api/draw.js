@@ -1,9 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = 'https://rponeyilawghkerjzmhd.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwb25lemlsYXdnaGtlcmp6bWhkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTI5NDMzNCwiZXhwIjoyMTA0ODcwMzM0fQ.fU53-D6lOHf7MqNf6oh7Da_eyNMzcsR343h9tULShi8';
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,12 +10,23 @@ export default async function handler(req, res) {
   }
 
   try {
+    // 1. Tüm pikselleri getir (GET)
     if (req.method === 'GET') {
-      const { data, error } = await supabase.from('pixels').select('*');
-      if (error) throw error;
-      return res.status(200).json(data || []);
+      const keys = await kv.keys('pixel:*');
+      let pixels = [];
+      
+      if (keys.length > 0) {
+        const values = await kv.mget(...keys);
+        pixels = values.map((val, index) => {
+          const [x, y] = keys[index].replace('pixel:', '').split(',');
+          return { x: parseInt(x), y: parseInt(y), color: val };
+        });
+      }
+
+      return res.status(200).json(pixels);
     }
 
+    // 2. Piksel kaydet (POST)
     if (req.method === 'POST') {
       const { x, y, color } = req.body || {};
 
@@ -28,17 +34,14 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Eksik veri.' });
       }
 
-      const { error } = await supabase
-        .from('pixels')
-        .upsert({ x, y, color }, { onConflict: 'x,y' });
-
-      if (error) throw error;
+      await kv.set(`pixel:${x},${y}`, color);
 
       return res.status(200).json({ success: true });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
+    console.error("KV Hatası:", err);
     return res.status(500).json({ error: err.message });
   }
 }
